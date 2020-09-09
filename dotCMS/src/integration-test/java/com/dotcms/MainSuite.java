@@ -316,7 +316,8 @@ import org.junit.runners.Suite.SuiteClasses;
         ContentletWebAPIImplIntegrationTest.class,
         Task05370AddAppsPortletToLayoutTest.class,
         FolderFactoryImplTest.class,
-        DotSamlResourceTest.class
+        DotSamlResourceTest.class,
+        FolderFactoryImplTest.class
 })
 public class MainSuite {
 

@@ -1,5 +1,6 @@
 package com.dotcms.integritycheckers;
 
+import com.dotcms.http.DotExecutionException;
 import com.dotcms.repackage.com.csvreader.CsvReader;
 import com.dotcms.repackage.com.csvreader.CsvWriter;
 import com.dotcms.rest.IntegrityResource;
@@ -14,6 +15,7 @@ import com.dotmarketing.util.ConfigUtils;
 import com.dotmarketing.util.Logger;
 import com.dotmarketing.util.MaintenanceUtil;
 import com.dotmarketing.util.UtilMethods;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.*;
 import java.math.BigDecimal;
@@ -27,6 +29,9 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.function.BiConsumer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -56,6 +61,15 @@ import java.util.zip.ZipOutputStream;
  *
  */
 public class IntegrityUtil {
+
+    private static final String INTEGRITY_DATA_STATUS = "status";
+    private static final String INTEGRITY_DATA_ERROR_MESSAGE = "error_message";
+
+    public static final String INTEGRITY_DATA_TO_CHECK_ZIP_FILENAME = "DataToCheck.zip";
+    public static final String INTEGRITY_DATA_TO_FIX_ZIP_FILENAME = "DataToFix.zip";
+    public static final String INTEGRITY_DATA_STATUS_FILENAME = "DataStatus.properties";
+    public static final String REQUESTER_ENDPOINT = "requesterEndpoint";
+    public static final String INTEGRITY_DATA_REQUEST_ID = "integrityDataRequestId";
 
     private File generateDataToFixCSV(String outputPath, String endpointId, IntegrityType type)
             throws DotDataException, IOException {
@@ -243,6 +257,88 @@ public class IntegrityUtil {
         }
     }
 
+    private static String getIntegrityDataPath(final String endpointId) {
+        return ConfigUtils.getIntegrityPath() + File.separator + endpointId;
+    }
+
+    public static String getIntegrityDataFile(final String endpointId, final String dataFile) {
+        return getIntegrityDataPath(endpointId) + File.separator + dataFile;
+    }
+
+    public static boolean doesIntegrityDataFileExist(final String endpointId, final String dataFile) {
+        return new File(getIntegrityDataFile(endpointId, dataFile)).exists();
+    }
+
+    public static Optional<IntegrityDataControl> getIntegrityDataControl(final String endpointId) {
+        final File statusFile = new File(getIntegrityDataFile(endpointId, INTEGRITY_DATA_STATUS_FILENAME));
+        if (!statusFile.exists()) {
+            return Optional.empty();
+        }
+
+        final Properties statusData = new Properties();
+        try {
+            statusData.load(new FileInputStream(statusFile));
+        } catch (IOException e) {
+            Logger.error(
+                    IntegrityUtil.class,
+                    String.format("Could load status from %s", statusFile.getAbsolutePath()),
+                    e);
+            return Optional.empty();
+        }
+
+        return Optional.of(new IntegrityDataControl(
+                statusData.getProperty(REQUESTER_ENDPOINT),
+                statusData.getProperty(INTEGRITY_DATA_REQUEST_ID),
+                statusData.getProperty(INTEGRITY_DATA_STATUS),
+                statusData.getProperty(INTEGRITY_DATA_ERROR_MESSAGE)));
+    }
+
+    private static void saveIntegrityDataStatus(IntegrityDataControl integrityDataControl) {
+        final String endpointId = integrityDataControl.getEndpointId();
+        final File integrityDir = new File(getIntegrityDataPath(endpointId));
+        if (!integrityDir.exists()) {
+            integrityDir.mkdir();
+        }
+
+        final File statusFile = new File(getIntegrityDataFile(endpointId, INTEGRITY_DATA_STATUS_FILENAME));
+        if (statusFile.exists()) {
+            statusFile.delete();
+        }
+
+        final Properties statusData = new Properties();
+        final BiConsumer<String, String> addData = (data, name) -> {
+            if (StringUtils.isNotBlank(data)) {
+                statusData.setProperty(name, data);
+            }
+        };
+
+        addData.accept(endpointId, REQUESTER_ENDPOINT);
+        addData.accept(integrityDataControl.getRequestId(), INTEGRITY_DATA_REQUEST_ID);
+        statusData.setProperty(INTEGRITY_DATA_STATUS, integrityDataControl.getProcessStatus().toString().toUpperCase());
+        addData.accept(integrityDataControl.getErrorMessage(), INTEGRITY_DATA_ERROR_MESSAGE);
+
+        try (FileOutputStream output = new FileOutputStream(statusFile)) {
+            statusData.store(output, null);
+        } catch (IOException e) {
+            throw new DotExecutionException(
+                    String.format("Could not save status to %s", statusFile.getAbsolutePath()),
+                    e);
+        }
+    }
+
+    public static void saveIntegrityDataStatus(final String endpointId,
+                                               final String requestId,
+                                               final IntegrityResource.ProcessStatus processStatus,
+                                               final String errorMessage) {
+        saveIntegrityDataStatus(new IntegrityDataControl(endpointId, requestId, processStatus, errorMessage));
+    }
+
+    public static void saveIntegrityDataStatus(final String endpointId,
+                                               final String requestId,
+                                               final IntegrityResource.ProcessStatus processStatus) {
+        saveIntegrityDataStatus(endpointId, requestId, processStatus, null);
+    }
+
     /**
      * Creates all the CSV from End Point database table and store them inside
      * zip file.
@@ -250,72 +346,69 @@ public class IntegrityUtil {
      * @param endpointId
      * @throws Exception
      */
-    public void generateDataToCheckZip(String endpointId) throws Exception {
+    public static void generateDataToCheckZip(final String endpointId) throws Exception {
+        if (!UtilMethods.isSet(endpointId)) {
+            Logger.error(IntegrityUtil.class, "Endpoint was not provided");
+            return;
+        }
+
+        Logger.info(
+                IntegrityUtil.class,
+                String.format("Starting integrity data generation job for endpoint %s", endpointId));
+
         File zipFile = null;
-
         try {
-            if (!UtilMethods.isSet(endpointId))
-                return;
-
-            final String outputPath = ConfigUtils.getIntegrityPath() + File.separator + endpointId;
-
-            File dir = new File(outputPath);
-
+            final String outputPath = getIntegrityDataPath(endpointId);
+            final File dir = new File(outputPath);
             // if file doesn't exist, create it
             if (!dir.exists()) {
                 dir.mkdir();
             }
 
-            zipFile = new File(outputPath + File.separator
-                    + IntegrityResource.INTEGRITY_DATA_TO_CHECK_ZIP_FILE_NAME);
-
-            try (OutputStream os = Files.newOutputStream(zipFile.toPath());
-                    ZipOutputStream zos = new ZipOutputStream(os)) {
-                IntegrityType[] types = IntegrityType.values();
+            zipFile = new File(getIntegrityDataFile(endpointId, INTEGRITY_DATA_TO_CHECK_ZIP_FILENAME));
+            try(final OutputStream os = Files.newOutputStream(zipFile.toPath());
+                final ZipOutputStream zos = new ZipOutputStream(os)) {
+                final IntegrityType[] types = IntegrityType.values();
                 for (IntegrityType integrityType : types) {
                     File fileToCheckCsvFile = null;
 
                     try {
-                        fileToCheckCsvFile = integrityType.getIntegrityChecker()
-                        		.generateCSVFile(outputPath);
-
-                        addToZipFile(fileToCheckCsvFile.getAbsolutePath(), zos,
-                                integrityType.getDataToCheckCSVName());
+                        fileToCheckCsvFile = integrityType.getIntegrityChecker().generateCSVFile(outputPath);
+                        addToZipFile(fileToCheckCsvFile.getAbsolutePath(), zos, integrityType.getDataToCheckCSVName());
                     } finally {
-                        if (fileToCheckCsvFile != null && fileToCheckCsvFile.exists())
+                        if (fileToCheckCsvFile != null && fileToCheckCsvFile.exists()) {
                             fileToCheckCsvFile.delete();
+                        }
                     }
                 }
             }
         } catch (Exception e) {
-            if (zipFile != null && zipFile.exists())
+            if (zipFile != null && zipFile.exists()) {
                 zipFile.delete();
+            }
 
             throw new Exception(e);
         }
     }
 
-    public void generateDataToFixZip(String endpointId, IntegrityType type) {
+    public void generateDataToFixZip(final String endpointId, final IntegrityType type) {
+        if (!UtilMethods.isSet(endpointId)) {
+            return;
+        }
+
         File dataToFixCsvFile = null;
         File zipFile = null;
-
         try {
-            if (!UtilMethods.isSet(endpointId))
-                return;
-
-            final String outputPath = ConfigUtils.getIntegrityPath() + File.separator + endpointId;
-
-            File dir = new File(outputPath);
-
+            final String outputPath = getIntegrityDataPath(endpointId);
+            final File dir = new File(outputPath);
             // if file doesn't exist, create it
             if (!dir.exists()) {
                 dir.mkdir();
             }
 
-            zipFile = new File(outputPath + File.separator
-                    + IntegrityResource.INTEGRITY_DATA_TO_FIX_ZIP_FILE_NAME);
-            try (OutputStream os = Files.newOutputStream(zipFile.toPath());
-                    ZipOutputStream zos = new ZipOutputStream(os)) {
+            zipFile = new File(getIntegrityDataFile(endpointId, INTEGRITY_DATA_TO_FIX_ZIP_FILENAME));
+            try (final OutputStream os = Files.newOutputStream(zipFile.toPath());
+                 final ZipOutputStream zos = new ZipOutputStream(os)) {
                 // create Folders CSV
                 dataToFixCsvFile = generateDataToFixCSV(outputPath, endpointId, type);
 
@@ -625,4 +718,48 @@ public class IntegrityUtil {
 
         return existConflicts;
     }
+
+
+    public static class IntegrityDataControl implements Serializable {
+
+        private final String endpointId;
+        private final String requestId;
+        private final IntegrityResource.ProcessStatus processStatus;
+        private final String errorMessage;
+
+        public IntegrityDataControl(String endpointId,
+                                    String requestId,
+                                    IntegrityResource.ProcessStatus processStatus,
+                                    String errorMessage) {
+            this.endpointId = endpointId;
+            this.requestId = requestId;
+            this.processStatus = processStatus;
+            this.errorMessage = errorMessage;
+        }
+
+        public IntegrityDataControl(String endpointId,
+                                    String requestId,
+                                    String status,
+                                    String errorMessage) {
+            this(endpointId, requestId, IntegrityResource.ProcessStatus.valueOf(status.toUpperCase()), errorMessage);
+        }
+
+        public String getEndpointId() {
+            return endpointId;
+        }
+
+        public String getRequestId() {
+            return requestId;
+        }
+
+        public IntegrityResource.ProcessStatus getProcessStatus() {
+            return processStatus;
+        }
+
+        public String getErrorMessage() {
+            return errorMessage;
+        }
+
+    }
+
 }
