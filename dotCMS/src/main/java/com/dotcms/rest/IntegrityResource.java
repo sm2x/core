@@ -380,7 +380,10 @@ public class IntegrityResource {
             //Sending bundle to endpoint
             final String url = endpoint.toURL() + "/api/integrity/generateintegritydata/";
             final Response response = postWithEndpointState(
-            	endpoint.getId(), url, MediaType.TEXT_PLAIN_TYPE, Entity.entity(form, form.getMediaType())
+                    endpoint.getId(),
+                    url,
+                    MediaType.TEXT_PLAIN_TYPE,
+                    Entity.entity(form, form.getMediaType())
             );
 
             if (response.getStatus() == HttpStatus.SC_OK) {
@@ -405,9 +408,7 @@ public class IntegrityResource {
                                 processing = false;
 
                                 final InputStream zipFile = response.readEntity(InputStream.class);
-                                final String outputDir = ConfigUtils.getIntegrityPath()
-                                        + File.separator
-                                        + endpoint.getId();
+                                final String outputDir = IntegrityUtil.getIntegrityDataPath(endpoint.getId());
 
                                 try {
                                     IntegrityUtil.unzipFile(zipFile, outputDir);

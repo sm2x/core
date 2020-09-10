@@ -257,7 +257,7 @@ public class IntegrityUtil {
         }
     }
 
-    private static String getIntegrityDataPath(final String endpointId) {
+    public static String getIntegrityDataPath(final String endpointId) {
         return ConfigUtils.getIntegrityPath() + File.separator + endpointId;
     }
 
@@ -337,6 +337,10 @@ public class IntegrityUtil {
                                                final String requestId,
                                                final IntegrityResource.ProcessStatus processStatus) {
         saveIntegrityDataStatus(endpointId, requestId, processStatus, null);
+    }
+
+    public static void resetIntegrityDataControl(final String endpointId, final String requestId) {
+
     }
 
     /**
