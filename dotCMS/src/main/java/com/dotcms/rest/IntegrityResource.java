@@ -19,7 +19,6 @@ import com.dotmarketing.exception.DotSecurityException;
 import com.dotmarketing.quartz.QuartzUtils;
 import com.dotmarketing.quartz.ScheduledTask;
 import com.dotmarketing.quartz.job.IntegrityDataGenerationJob;
-import com.dotmarketing.util.ConfigUtils;
 import com.dotmarketing.util.Logger;
 import com.dotmarketing.util.UUIDGenerator;
 import com.dotmarketing.util.UtilMethods;
@@ -239,7 +238,7 @@ public class IntegrityResource {
                 return Response.status(HttpStatus.SC_PROCESSING).build();
             }
 
-            final Optional<IntegrityUtil.IntegrityDataControl> controlOpt =
+            final Optional<IntegrityUtil.IntegrityDataExecutionMetadata> controlOpt =
                     IntegrityUtil.getIntegrityDataControl(requesterEndpoint.getId());
             if (!controlOpt.isPresent() || !requestId.equals(controlOpt.get().getRequestId())) {
                 return Response.status(HttpStatus.SC_UNAUTHORIZED).build();
@@ -272,7 +271,7 @@ public class IntegrityResource {
 
                 return Response.ok(output).build();
             } else {
-                final Optional<IntegrityUtil.IntegrityDataControl> jobStatusOpt =
+                final Optional<IntegrityUtil.IntegrityDataExecutionMetadata> jobStatusOpt =
                         IntegrityUtil.getIntegrityDataControl(requesterEndpoint.getId());
                 if (jobStatusOpt.isPresent() &&
                         (jobStatusOpt.get().getProcessStatus() == ProcessStatus.CANCELLED ||
@@ -714,7 +713,7 @@ public class IntegrityResource {
                 return Response.status(HttpStatus.SC_UNAUTHORIZED).build();
             }
 
-            final Optional<IntegrityUtil.IntegrityDataControl> controlOpt =
+            final Optional<IntegrityUtil.IntegrityDataExecutionMetadata> controlOpt =
                     IntegrityUtil.getIntegrityDataControl(requesterEndPoint.getId());
             if (!controlOpt.isPresent() || !requestId.equals(controlOpt.get().getRequestId())) {
                 return Response.status( HttpStatus.SC_UNAUTHORIZED ).build();

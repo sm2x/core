@@ -257,19 +257,47 @@ public class IntegrityUtil {
         }
     }
 
+    /**
+     * Creates a String representing the integrity data path based on provided endpointId.
+     *
+     * @param endpointId endpoint if
+     * @return integrity data path
+     */
     public static String getIntegrityDataPath(final String endpointId) {
         return ConfigUtils.getIntegrityPath() + File.separator + endpointId;
     }
 
+    /**
+     * Creates a String representing the integrity data file path based on provided endpointId and the file name.
+     * File names to be used: DataToCheck.zip, DataToFix.zip and DataStatus.properties.
+     *
+     * @param endpointId endpoint gid
+     * @param dataFile data filename
+     * @return path to filename
+     */
     public static String getIntegrityDataFile(final String endpointId, final String dataFile) {
         return getIntegrityDataPath(endpointId) + File.separator + dataFile;
     }
 
+    /**
+     * Tells whether a integrity file exists based on provided endpointId and the file name.
+     *
+     * @param endpointId endpoint id
+     * @param dataFile data filename
+     * @return path to filename
+     */
     public static boolean doesIntegrityDataFileExist(final String endpointId, final String dataFile) {
         return new File(getIntegrityDataFile(endpointId, dataFile)).exists();
     }
 
-    public static Optional<IntegrityDataControl> getIntegrityDataControl(final String endpointId) {
+    /**
+     * Gets a {@link IntegrityDataExecutionMetadata} instance based on provided endpoint id which contains metadata of the
+     * integrity data generation execution.
+     *
+     * @param endpointId endpoint id
+     * @return Optional wrapping the integrity generation  metadata
+     */
+    public static Optional<IntegrityDataExecutionMetadata> getIntegrityDataControl(final String endpointId) {
         final File statusFile = new File(getIntegrityDataFile(endpointId, INTEGRITY_DATA_STATUS_FILENAME));
         if (!statusFile.exists()) {
             return Optional.empty();
@@ -286,15 +314,22 @@ public class IntegrityUtil {
             return Optional.empty();
         }
 
-        return Optional.of(new IntegrityDataControl(
+        return Optional.of(new IntegrityDataExecutionMetadata(
                 statusData.getProperty(REQUESTER_ENDPOINT),
                 statusData.getProperty(INTEGRITY_DATA_REQUEST_ID),
                 statusData.getProperty(INTEGRITY_DATA_STATUS),
                 statusData.getProperty(INTEGRITY_DATA_ERROR_MESSAGE)));
     }
 
-    private static void saveIntegrityDataStatus(IntegrityDataControl integrityDataControl) {
-        final String endpointId = integrityDataControl.getEndpointId();
+    /**
+     * Saves a integrity data generation metadata in a to-be-discovered location so it can be read by concurrent parts
+     * that need to know what is the status of the integrity data generation.
+     * The data is saved as {@link Properties} file.
+     *
+     * @param integrityDataExecutionMetadata execution metadata
+     */
+    private static void saveIntegrityDataStatus(IntegrityDataExecutionMetadata integrityDataExecutionMetadata) {
+        final String endpointId = integrityDataExecutionMetadata.getEndpointId();
         final File integrityDir = new File(getIntegrityDataPath(endpointId));
         if (!integrityDir.exists()) {
             integrityDir.mkdir();
@@ -313,9 +348,9 @@ public class IntegrityUtil {
         };
 
         addData.accept(endpointId, REQUESTER_ENDPOINT);
-        addData.accept(integrityDataControl.getRequestId(), INTEGRITY_DATA_REQUEST_ID);
-        statusData.setProperty(INTEGRITY_DATA_STATUS, integrityDataControl.getProcessStatus().toString().toUpperCase());
-        addData.accept(integrityDataControl.getErrorMessage(), INTEGRITY_DATA_ERROR_MESSAGE);
+        addData.accept(integrityDataExecutionMetadata.getRequestId(), INTEGRITY_DATA_REQUEST_ID);
+        statusData.setProperty(INTEGRITY_DATA_STATUS, integrityDataExecutionMetadata.getProcessStatus().toString().toUpperCase());
+        addData.accept(integrityDataExecutionMetadata.getErrorMessage(), INTEGRITY_DATA_ERROR_MESSAGE);
 
         try (FileOutputStream output = new FileOutputStream(statusFile)) {
             statusData.store(output, null);
@@ -326,21 +361,36 @@ public class IntegrityUtil {
         }
     }
 
+    /**
+     * Saves a integrity data generation metadata in a to-be-discovered location so it can be read by concurrent parts
+     * that need to know what is the status of the integrity data generation.
+     * Individual parameters are used to create a {@link IntegrityDataExecutionMetadata}.
+     *
+     * @param endpointId endpoint id
+     * @param requestId request id
+     * @param processStatus {@link IntegrityResource.ProcessStatus} instance to reflect the current status
+     * @param errorMessage error message associated to detected error
+     */
     public static void saveIntegrityDataStatus(final String endpointId,
                                                final String requestId,
                                                final IntegrityResource.ProcessStatus processStatus,
                                                final String errorMessage) {
-        saveIntegrityDataStatus(new IntegrityDataControl(endpointId, requestId, processStatus, errorMessage));
+        saveIntegrityDataStatus(new IntegrityDataExecutionMetadata(endpointId, requestId, processStatus, errorMessage));
     }
 
+    /**
+     * Saves a integrity data generation metadata in a to-be-discovered location so it can be read by concurrent parts
+     * that need to know what is the status of the integrity data generation.
+     * Individual parameters are used to create a {@link IntegrityDataExecutionMetadata}.
+     *
+     * @param endpointId endpoint id
+     * @param requestId request id
+     * @param processStatus {@link IntegrityResource.ProcessStatus} instance to reflect the current status
+     */
     public static void saveIntegrityDataStatus(final String endpointId,
                                                final String requestId,
                                                final IntegrityResource.ProcessStatus processStatus) {
         saveIntegrityDataStatus(endpointId, requestId, processStatus, null);
-    }
-
-    public static void resetIntegrityDataControl(final String endpointId, final String requestId) {
-
     }
 
     /**
@@ -723,28 +773,30 @@ public class IntegrityUtil {
         return existConflicts;
     }
 
-
-    public static class IntegrityDataControl implements Serializable {
+    /**
+     * Integrity data generation metadata bean to be saved.
+     */
+    public static class IntegrityDataExecutionMetadata implements Serializable {
 
         private final String endpointId;
         private final String requestId;
         private final IntegrityResource.ProcessStatus processStatus;
         private final String errorMessage;
 
-        public IntegrityDataControl(String endpointId,
-                                    String requestId,
-                                    IntegrityResource.ProcessStatus processStatus,
-                                    String errorMessage) {
+        public IntegrityDataExecutionMetadata(String endpointId,
+                                              String requestId,
+                                              IntegrityResource.ProcessStatus processStatus,
+                                              String errorMessage) {
             this.endpointId = endpointId;
             this.requestId = requestId;
             this.processStatus = processStatus;
             this.errorMessage = errorMessage;
         }
 
-        public IntegrityDataControl(String endpointId,
-                                    String requestId,
-                                    String status,
-                                    String errorMessage) {
+        public IntegrityDataExecutionMetadata(String endpointId,
+                                              String requestId,
+                                              String status,
+                                              String errorMessage) {
             this(endpointId, requestId, IntegrityResource.ProcessStatus.valueOf(status.toUpperCase()), errorMessage);
         }
 

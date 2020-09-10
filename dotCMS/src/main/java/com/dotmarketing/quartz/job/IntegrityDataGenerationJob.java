@@ -21,6 +21,12 @@ import org.quartz.UnableToInterruptJobException;
 
 import java.util.Date;
 
+/**
+ * Quartz stateful job in charge of generating the integrity data for a provided endpoint id and request id.
+ * It calls in place functionality at {link IntegrityUtil} to do the actual generation of the zip file.
+ *
+ * It also implements the {@link InterruptableJob} interface to support cancellation at any time.
+ */
 public class IntegrityDataGenerationJob extends DotStatefulJob implements InterruptableJob {
 
     private static final String TRIGGER_NAME = "IntegrityDataGenerationTrigger";
@@ -31,6 +37,14 @@ public class IntegrityDataGenerationJob extends DotStatefulJob implements Interr
 
     private JobExecutionContext jobContext;
 
+    /**
+     * Code to execute when Quartz calls the job.
+     * Takes endpoint and request id from context to tries to generate check data zip file not without adding some
+     * metadata to have control of what is going on.
+     *
+     * @param jobContext job context
+     * @throws JobExecutionException
+     */
     @Override
     @CloseDBIfOpened
     public void run(final JobExecutionContext jobContext) throws JobExecutionException {
@@ -46,10 +60,8 @@ public class IntegrityDataGenerationJob extends DotStatefulJob implements Interr
                 IntegrityResource.ProcessStatus.PROCESSING);
 
         try {
-            //TODO: remove this sleep
-            Thread.sleep(15*1000);
             // Actual integrity data file generation
-                IntegrityUtil.generateDataToCheckZip(requesterEndPoint.getId());
+            IntegrityUtil.generateDataToCheckZip(requesterEndPoint.getId());
             // Integrity data generation went ok
             IntegrityUtil.saveIntegrityDataStatus(
                     requesterEndPoint.getId(),
@@ -69,6 +81,12 @@ public class IntegrityDataGenerationJob extends DotStatefulJob implements Interr
         }
     }
 
+    /**
+     * Logic to execute when interrupted is detected.
+     * Sets the current status of job execution so CANCELLED.
+     *
+     * @throws UnableToInterruptJobException
+     */
     @Override
     public void interrupt() throws UnableToInterruptJobException {
         if (jobContext == null) {
@@ -89,6 +107,12 @@ public class IntegrityDataGenerationJob extends DotStatefulJob implements Interr
                 IntegrityResource.ProcessStatus.CANCELLED);
     }
 
+    /**
+     * Creates {@link JobDataMap} and {@link JobDetail} instances with integrity check data to trigger actual job.
+     *
+     * @param requesterEndPoint endpoint id
+     * @param integrityDataRequestId integrity data request id
+     */
     public static void triggerIntegrityDataGeneration(final PublishingEndPoint requesterEndPoint,
                                                       final String integrityDataRequestId) {
         final JobDataMap jobDataMap = new JobDataMap();
@@ -110,6 +134,11 @@ public class IntegrityDataGenerationJob extends DotStatefulJob implements Interr
         }));
     }
 
+    /**
+     * Encapsulates Scheduler to use.
+     * @return a scheduler
+     * @throws SchedulerException
+     */
     public static Scheduler getJobScheduler() throws SchedulerException {
         return QuartzUtils.getStandardScheduler();
     }
