@@ -491,6 +491,7 @@ public class IntegrityResource {
                                     //Setting the process status
                                     setStatus(session, endpointId, ProcessStatus.NO_CONFLICTS, noConflictMessage);
                                 }
+                            } else if ( response.getStatus() == HttpStatus.SC_PROCESSING ) {
                             } else if (response.getStatus() == HttpStatus.SC_RESET_CONTENT) {
                                 processing = false;
                                 //Setting the process status

@@ -46,8 +46,10 @@ public class IntegrityDataGenerationJob extends DotStatefulJob implements Interr
                 IntegrityResource.ProcessStatus.PROCESSING);
 
         try {
+            //TODO: remove this sleep
+            Thread.sleep(15*1000);
             // Actual integrity data file generation
-            IntegrityUtil.generateDataToCheckZip(requesterEndPoint.getId());
+                IntegrityUtil.generateDataToCheckZip(requesterEndPoint.getId());
             // Integrity data generation went ok
             IntegrityUtil.saveIntegrityDataStatus(
                     requesterEndPoint.getId(),
